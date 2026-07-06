@@ -40,9 +40,11 @@ Convert the raw genotype VCF file into a model-compatible transposed format.
 
 
 Run Preprocessing:
+```bash
 
 python data\_pre.py
 
+```
 
 
 Upon successful execution, "Success" will be printed, and the transposed matrix file final1.pkl will be generated.
@@ -58,9 +60,11 @@ Extract the tag SNP marker set (e.g., top 4,096 sites) from the raw whole-genome
 
 
 Run Selection:
+```bash
 
 python main.py --counts 4096
 
+```
 
 
 Upon successful execution, the selected tag SNP set will be automatically saved in the output folder.
@@ -78,9 +82,11 @@ Invoke the pre-trained multi-task neural network to reconstruct the high-density
 
 
 Run Imputation:
+```bash
 
 python impute.py
 
+```
 
 
 Upon successful execution, the terminal will print the prediction progress of each genomic segment in sequence, and the reconstructed whole-genome high-density matrix file imputed\_full\_genome.pkl will be automatically generated in the current directory.
