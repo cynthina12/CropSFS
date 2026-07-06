@@ -21,12 +21,13 @@ Optional: Hardware accelerator supporting PyTorch (CUDA GPU, highly recommended 
 
 
 We provide a pre-packaged Conda environment blueprint for directly running all scripts in this toolkit.
+```bash
 
 conda env create -f CropSFS.yml
 
 conda activate CropSFS
 
-
+```
 
 **Module 1: Feature Selection (CropSFS)**
 
