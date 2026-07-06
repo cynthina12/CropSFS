@@ -42,7 +42,7 @@ Convert the raw genotype VCF file into a model-compatible transposed format.
 Run Preprocessing:
 ```bash
 
-python data\_pre.py
+python data_pre.py
 
 ```
 
@@ -60,9 +60,25 @@ Extract the tag SNP marker set (e.g., top 4,096 sites) from the raw whole-genome
 
 
 Run Selection:
+
+# Example 1: Force execution on CPU
 ```bash
 
-python main.py --counts 4096
+python CropSFS.py --counts 4096 --device cpu
+
+```
+
+# Example 2: Target a specific GPU card in a multi-GPU server environment
+```bash
+
+python CropSFS.py --counts 4096 --device cuda:1
+
+```
+
+# Example 3: Customize grid search spaces, Laplacian neighbors (k), and diffusion time-step (t)
+```bash
+
+python CropSFS.py --counts 4096 --neighbors_k 15 --t_step 0.3 --lr_grid "[0.001, 0.0005]" --hidden_grid "[256, 512]"
 
 ```
 
