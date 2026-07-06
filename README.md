@@ -61,27 +61,18 @@ Extract the tag SNP marker set (e.g., top 4,096 sites) from the raw whole-genome
 
 Run Selection:
 
-# Example 1: Force execution on CPU
 ```bash
 
+# Example 1: Force execution on CPU
 python CropSFS.py --counts 4096 --device cpu
 
-```
-
 # Example 2: Target a specific GPU card in a multi-GPU server environment
-```bash
-
 python CropSFS.py --counts 4096 --device cuda:1
 
-```
-
 # Example 3: Customize grid search spaces, Laplacian neighbors (k), and diffusion time-step (t)
-```bash
-
 python CropSFS.py --counts 4096 --neighbors_k 15 --t_step 0.3 --lr_grid "[0.001, 0.0005]" --hidden_grid "[256, 512]"
 
 ```
-
 
 Upon successful execution, the selected tag SNP set will be automatically saved in the output folder.
 
