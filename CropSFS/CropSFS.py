@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import time
+import json
 import numpy as np
 import pandas as pd
 import torch
@@ -36,10 +37,7 @@ class SimpleDiffusionModel(nn.Module):
         return self.net(x_t)
 
 
-def train_diffusion_model(data, device, param_grid=None, patience=20, max_epochs=1000, batch_size=64):
-    if param_grid is None:
-        param_grid = {'lr': [0.001], 'hidden_dim': [256]}
-
+def train_diffusion_model(data, device, param_grid, patience, max_epochs, batch_size):
     scaler = StandardScaler()
     data_scaled = scaler.fit_transform(data)
     data_tensor = torch.tensor(data_scaled, dtype=torch.float32)
@@ -52,7 +50,7 @@ def train_diffusion_model(data, device, param_grid=None, patience=20, max_epochs
     for params in ParameterGrid(param_grid):
         param_start_time = time.time()
         
-        if device.type == 'cuda':
+        if "cuda" in device.type:
             torch.cuda.empty_cache()
         
         model = SimpleDiffusionModel(input_dim=data.shape[1], hidden_dim=params['hidden_dim']).to(device)
@@ -73,7 +71,8 @@ def train_diffusion_model(data, device, param_grid=None, patience=20, max_epochs
                 t = torch.rand(1).item()
                 noisy_data = batch_x + torch.randn_like(batch_x) * t
                 
-                with torch.amp.autocast(device_type=device.type):
+                device_type = 'cuda' if 'cuda' in device.type else 'cpu'
+                with torch.amp.autocasc(device_type=device_type):
                     pred_noise = model(noisy_data, t)
                     loss = ((pred_noise - (noisy_data - batch_x))**2).mean()
 
@@ -112,7 +111,7 @@ def train_diffusion_model(data, device, param_grid=None, patience=20, max_epochs
     return best_model.to(device), scaler
 
 
-def get_embeddings(model, data, scaler, device, t=0.5, batch_size=128):
+def get_embeddings(model, data, scaler, device, t, batch_size):
     data_scaled = scaler.transform(data)
     data_tensor = torch.tensor(data_scaled, dtype=torch.float32)
     dataset = TensorDataset(data_tensor)
@@ -131,7 +130,7 @@ def get_embeddings(model, data, scaler, device, t=0.5, batch_size=128):
     return np.vstack(embeddings_list)
 
 
-def laplacian_scores(data, embeddings, k=10):
+def laplacian_scores(data, embeddings, k):
     nbrs = NearestNeighbors(n_neighbors=k).fit(embeddings)
     W = nbrs.kneighbors_graph(embeddings, mode='connectivity').toarray()
 
@@ -149,17 +148,32 @@ def laplacian_scores(data, embeddings, k=10):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input_path", type=str, default="data/final1.pkl")
-    parser.add_argument("--output_dir", type=str, default="output")
-    parser.add_argument("--batch_size", type=str, default="64")
-    parser.add_argument("--counts", type=str, default="4000")
+    parser = argparse.ArgumentParser(description="CropSFS Core Tag SNP Marker Selection Engine")
+    
+    parser.add_argument("--input_path", type=str, default="data/final1.pkl", help="Path to raw preprocessed matrix")
+    parser.add_argument("--output_dir", type=str, default="output", help="Directory to save selected tags")
+    parser.add_argument("--counts", type=str, default="4096", help="Comma-separated target numbers of tag SNPs")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size for training and embedding inference")
+    parser.add_argument("--max_epochs", type=int, default=1000, help="Max training epochs per combination")
+    parser.add_argument("--patience", type=int, default=20, help="Patience epochs for early stopping")
+    
+    parser.add_argument("--lr_grid", type=str, default="[0.01, 0.001, 0.0001]", help="JSON list of learning rates")
+    parser.add_argument("--hidden_grid", type=str, default="[128, 256, 512]", help="JSON list of hidden dimensions")
+    
+    parser.add_argument("--t_step", type=float, default=0.5, help="Diffusion time-step for feature extraction")
+    parser.add_argument("--neighbors_k", type=int, default=10, help="Number of neighbors for Laplacian graph construction")
+    
+    parser.add_argument("--device", type=str, default="auto", help="Device to run on: 'auto', 'cpu', 'cuda', 'cuda:1', etc.")
+    
     args = parser.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"[*] Env -> PyTorch: {torch.__version__} | Device: {device}")
+    if args.device == "auto":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(args.device)
+    print(f"[*] Env -> PyTorch: {torch.__version__} | Selected Target Device: {device}")
 
-    print(f"[*] Loading: {args.input_path}")
+    print(f"[*] Loading input payload from: {args.input_path}")
     if not os.path.exists(args.input_path):
         print(f"[X] Error: File not found at '{args.input_path}'")
         sys.exit(1)
@@ -167,18 +181,26 @@ def main():
     df = pd.read_pickle(args.input_path).astype('int8')
     os.makedirs(args.output_dir, exist_ok=True)
 
-    param_grid = {
-        'lr': [0.01, 0.001, 0.0001], 
-        'hidden_dim': [128, 256, 512]
-    } 
+    try:
+        param_grid = {
+            'lr': json.loads(args.lr_grid),
+            'hidden_dim': json.loads(args.hidden_grid)
+        }
+    except Exception as e:
+        print(f"[X] Parameter grid JSON parse error: {e}")
+        sys.exit(1)
     
-    model, scaler = train_diffusion_model(df, device=device, param_grid=param_grid, batch_size=int(args.batch_size))
+    print(f"[*] Triggering grid search over parameter space: {param_grid}")
+    model, scaler = train_diffusion_model(
+        df, device=device, param_grid=param_grid, 
+        patience=args.patience, max_epochs=args.max_epochs, batch_size=args.batch_size
+    )
     
-    print("[*] Extracting embeddings...")
-    embeddings = get_embeddings(model, df, scaler, device=device, batch_size=int(args.batch_size))
+    print(f"[*] Extracting dimensional embeddings at time-step t={args.t_step}...")
+    embeddings = get_embeddings(model, df, scaler, device=device, t=args.t_step, batch_size=args.batch_size)
     
-    print("[*] Calculating Laplacian scores...")
-    scores = laplacian_scores(df, embeddings)
+    print(f"[*] Calculating Laplacian scores with neighbor count k={args.neighbors_k}...")
+    scores = laplacian_scores(df, embeddings, k=args.neighbors_k)
     feature_ranking = np.argsort(scores)
     
     target_counts = [int(n.strip()) for n in args.counts.split(",") if n.strip().isdigit()]
@@ -189,9 +211,9 @@ def main():
         
         save_path = os.path.join(args.output_dir, f"final_selected_{n}.csv")
         selected_df.to_csv(save_path)
-        print(f"[✓] Saved: {save_path} | Shape: {selected_df.shape}")
+        print(f"[✓] Saved selected tag SNP dataset: {save_path} | Shape: {selected_df.shape}")
 
-    print("[*] Done.")
+    print("[*] Feature selection task finished successfully.")
 
 
 if __name__ == "__main__":
